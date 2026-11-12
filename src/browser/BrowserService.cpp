@@ -144,6 +144,17 @@ void BrowserService::lockDatabase()
     }
 }
 
+void BrowserService::connectCloseSignals(const QDialog& dialog)
+{
+    connect(this, SIGNAL(databaseChanged()), &dialog, SLOT(reject()));
+    connect(m_currentDatabaseWidget, SIGNAL(databaseLockRequested()), &dialog, SLOT(reject()));
+    connect(m_currentDatabaseWidget, SIGNAL(reloadBegin()), &dialog, SLOT(reject()));
+    connect(m_currentDatabaseWidget,
+            SIGNAL(databaseReplaced(const QSharedPointer<Database>&, const QSharedPointer<Database>&)),
+            &dialog,
+            SLOT(reject()));
+}
+
 QString BrowserService::getDatabaseHash(bool legacy)
 {
     if (legacy) {
@@ -468,8 +479,7 @@ QList<Entry*> BrowserService::confirmEntries(QList<Entry*>& entriesToConfirm,
     updateWindowState();
     BrowserAccessControlDialog accessControlDialog(m_currentDatabaseWidget);
 
-    connect(m_currentDatabaseWidget, SIGNAL(databaseLockRequested()), &accessControlDialog, SLOT(reject()));
-
+    connectCloseSignals(accessControlDialog);
     connect(&accessControlDialog, &BrowserAccessControlDialog::disableAccess, [&](QTableWidgetItem* item) {
         auto entry = entriesToConfirm[item->row()];
         denyEntry(entry, siteHost, formUrl, entryParameters.realm);
@@ -580,7 +590,7 @@ QString BrowserService::storeKey(const QString& key)
 
     do {
         QInputDialog keyDialog(m_currentDatabaseWidget);
-        connect(m_currentDatabaseWidget, SIGNAL(databaseLockRequested()), &keyDialog, SLOT(reject()));
+        connectCloseSignals(keyDialog);
         keyDialog.setWindowTitle(tr("KeePassXC - New key association request"));
         keyDialog.setLabelText(tr("You have received an association request for the following database:\n%1\n\n"
                                   "Give the connection a unique name or ID, for example:\nchrome-laptop.")
@@ -664,6 +674,7 @@ QJsonObject BrowserService::showPasskeysRegisterPrompt(const QJsonObject& public
 
     raiseWindow();
     BrowserPasskeysConfirmationDialog confirmDialog(m_currentDatabaseWidget);
+    connectCloseSignals(confirmDialog);
     confirmDialog.registerCredential(username, rpId, existingEntries, timeout);
 
     auto dialogResult = confirmDialog.exec();
@@ -759,7 +770,9 @@ QJsonObject BrowserService::showPasskeysAuthenticationPrompt(const QJsonObject& 
 
     raiseWindow();
     BrowserPasskeysConfirmationDialog confirmDialog(m_currentDatabaseWidget);
+    connectCloseSignals(confirmDialog);
     confirmDialog.authenticateCredential(entries, rpId, timeout);
+
     auto dialogResult = confirmDialog.exec();
     if (dialogResult == QDialog::Accepted) {
         hideWindow();
@@ -1393,9 +1406,9 @@ bool BrowserService::shouldIncludeEntry(Entry* entry,
 }
 
 // Returns all Passkey entries for the current Relying Party
-QList<Entry*> BrowserService::getPasskeyEntries(const QString& rpId, const StringPairList& keyList)
+QList<QPointer<Entry>> BrowserService::getPasskeyEntries(const QString& rpId, const StringPairList& keyList)
 {
-    QList<Entry*> entries;
+    QList<QPointer<Entry>> entries;
     for (const auto& entry : searchEntries(rpId, "", keyList, true)) {
         if (entry->hasPasskey() && entry->attributes()->value(EntryAttributes::KPEX_PASSKEY_RELYING_PARTY) == rpId) {
             entries << entry;
@@ -1406,11 +1419,11 @@ QList<Entry*> BrowserService::getPasskeyEntries(const QString& rpId, const Strin
 }
 
 // Returns all Passkey entries for the current Relying Party and identical user handle
-QList<Entry*> BrowserService::getPasskeyEntriesWithUserHandle(const QString& rpId,
-                                                              const QString& userId,
-                                                              const StringPairList& keyList)
+QList<QPointer<Entry>> BrowserService::getPasskeyEntriesWithUserHandle(const QString& rpId,
+                                                                       const QString& userId,
+                                                                       const StringPairList& keyList)
 {
-    QList<Entry*> entries;
+    QList<QPointer<Entry>> entries;
     for (const auto& entry : searchEntries(rpId, "", keyList, true)) {
         if (entry->hasPasskey() && entry->attributes()->value(EntryAttributes::KPEX_PASSKEY_RELYING_PARTY) == rpId
             && entry->attributes()->value(EntryAttributes::KPEX_PASSKEY_USER_HANDLE) == userId) {
@@ -1422,11 +1435,11 @@ QList<Entry*> BrowserService::getPasskeyEntriesWithUserHandle(const QString& rpI
 }
 
 // Get all entries for the site that are allowed by the server
-QList<Entry*> BrowserService::getPasskeyAllowedEntries(const QJsonObject& assertionOptions,
-                                                       const QString& rpId,
-                                                       const StringPairList& keyList)
+QList<QPointer<Entry>> BrowserService::getPasskeyAllowedEntries(const QJsonObject& assertionOptions,
+                                                                const QString& rpId,
+                                                                const StringPairList& keyList)
 {
-    QList<Entry*> entries;
+    QList<QPointer<Entry>> entries;
     const auto allowedCredentials = passkeyUtils()->getAllowedCredentialsFromAssertionOptions(assertionOptions);
     if (!assertionOptions["allowCredentials"].toArray().isEmpty() && allowedCredentials.isEmpty()) {
         return {};
@@ -1749,6 +1762,7 @@ void BrowserService::databaseUnlocked(DatabaseWidget* dbWidget)
 
 void BrowserService::activeDatabaseChanged(DatabaseWidget* dbWidget)
 {
+    emit databaseChanged();
     if (dbWidget) {
         if (dbWidget->isLocked()) {
             databaseLocked(dbWidget);

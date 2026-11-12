@@ -138,6 +138,7 @@ public:
 signals:
     void requestUnlock();
     void passwordGenerated(QLocalSocket* socket, const QString& password, const QString& nonce);
+    void databaseChanged();
 
 public slots:
     void databaseLocked(DatabaseWidget* dbWidget);
@@ -164,6 +165,7 @@ private:
         HiddenInSystemTray
     };
 
+    void connectCloseSignals(const QDialog& dialog);
     QList<Entry*> searchEntries(const QSharedPointer<Database>& db,
                                 const QString& siteUrl,
                                 const QString& formUrl,
@@ -188,10 +190,10 @@ private:
     bool
     shouldIncludeEntry(Entry* entry, const QString& url, const QString& submitUrl, const bool omitWwwSubdomain = false);
 
-    QList<Entry*> getPasskeyEntries(const QString& rpId, const StringPairList& keyList);
-    QList<Entry*>
+    QList<QPointer<Entry>> getPasskeyEntries(const QString& rpId, const StringPairList& keyList);
+    QList<QPointer<Entry>>
     getPasskeyEntriesWithUserHandle(const QString& rpId, const QString& userId, const StringPairList& keyList);
-    QList<Entry*>
+    QList<QPointer<Entry>>
     getPasskeyAllowedEntries(const QJsonObject& assertionOptions, const QString& rpId, const StringPairList& keyList);
     bool isPasskeyCredentialExcluded(const QJsonArray& excludeCredentials,
                                      const QString& rpId,
@@ -225,6 +227,7 @@ private:
 
     friend class TestBrowser;
     friend class TestPasskeys;
+    friend class TestGuiBrowser;
 };
 
 static inline BrowserService* browserService()
