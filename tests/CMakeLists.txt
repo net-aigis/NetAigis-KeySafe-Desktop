@@ -163,6 +163,11 @@ add_unit_test(NAME testconfig SOURCES TestConfig.cpp
 add_unit_test(NAME testcoordinatorconfig SOURCES TestCoordinatorConfigValidation.cpp
         LIBS ${TEST_LIBRARIES})
 
+if(KPXC_FEATURE_NETWORK)
+    add_unit_test(NAME testkdbxcoordinatorclientlive SOURCES TestKdbxCoordinatorClientLive.cpp
+            LIBS ${TEST_LIBRARIES})
+endif()
+
 add_unit_test(NAME testcli SOURCES TestCli.cpp
         LIBS testsupport cli ${ZXCVBN_LIBRARIES} ${TEST_LIBRARIES})
 target_compile_definitions(testcli PRIVATE KEEPASSX_CLI_PATH="$<TARGET_FILE:keepassxc-cli>")

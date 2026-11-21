@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>NetAigis</vendor>
+  <vendor_url>https://net-aigis.de/keysafe.html</vendor_url>
+  <icon_name>@APP_ICON_NAME@</icon_name>
+
+  <action id="de.netaigis.keysafe.desktop.unlockDatabase">
+    <description>Quick Unlock for a NetAigis KeySafe Database</description>
+    <message>Authentication is required to unlock a NetAigis KeySafe Database</message>
+    <defaults>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_self</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

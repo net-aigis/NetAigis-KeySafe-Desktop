@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8'?>
+<component type="desktop-application">
+  <id>de.netaigis.keysafe.desktop.desktop</id>
+  <name>NetAigis KeySafe</name>
+  <summary>NetAigis KeySafe desktop (KeePassXC-based fork)</summary>
+  <summary xml:lang="de">NetAigis KeySafe Desktop (KeePassXC-basierter Fork)</summary>
+  <developer id="de.netaigis">
+    <name>NetAigis</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>NetAigis KeySafe is an independent KeePassXC-based desktop fork. Android and Linux are platform variants of the same KeySafe project. Experimental coordinated KDBX access is under development and not production-ready.</p>
+    <p xml:lang="de">NetAigis KeySafe ist ein eigenständiger KeePassXC-basierter Desktop-Fork. Android und Linux sind Plattformvarianten desselben KeySafe-Projekts. Der koordinierte KDBX-Zugriff ist experimentell und nicht produktionsreif.</p>
+  </description>
+  <launchable type="desktop-id">de.netaigis.keysafe.desktop.desktop</launchable>
+  <url type="homepage">https://net-aigis.de/keysafe.html</url>
+  <url type="bugtracker">https://github.com/net-aigis/keepassxc/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0-dev" date="2026-11-21"/>
+  </releases>
+</component>

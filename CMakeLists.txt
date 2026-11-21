@@ -95,7 +95,12 @@ endif()
 
 # Initialize project
 project(KeePassXC)
-set(APP_ID "org.keepassxc.${PROJECT_NAME}")
+# NetAigis KeySafe desktop fork identity (parallel to Android NetAigis-KeySafe).
+# CMake project()/internal targets stay KeePassXC for upstream mergeability;
+# user-visible branding and install IDs are KeySafe.
+set(NETAIGIS_PRODUCT_NAME "NetAigis KeySafe")
+set(APP_ID "de.netaigis.keysafe.desktop")
+# Product version is .version (0.1.0-dev), same scheme as Android NetAigis-KeySafe — not 1.x until release.
 
 # Retrieve git HEAD revision hash
 set(GIT_HEAD_OVERRIDE "" CACHE STRING "Manually set the Git HEAD hash when missing (eg, when no .git folder exists)")
@@ -387,14 +392,14 @@ if(WIN32)
 endif()
 
 if(WIN32)
-    set(PROGNAME KeePassXC)
+    set(PROGNAME KeySafe)
     set(CLI_INSTALL_DIR ".")
     set(PROXY_INSTALL_DIR ".")
     set(BIN_INSTALL_DIR ".")
     set(PLUGIN_INSTALL_DIR ".")
     set(DATA_INSTALL_DIR "share")
 elseif(APPLE AND WITH_APP_BUNDLE)
-    set(PROGNAME KeePassXC)
+    set(PROGNAME KeySafe)
     set(BUNDLE_INSTALL_DIR "${PROGNAME}.app/Contents")
     set(CMAKE_INSTALL_MANDIR "${BUNDLE_INSTALL_DIR}/Resources/man")
     set(CLI_INSTALL_DIR "${BUNDLE_INSTALL_DIR}/MacOS")
@@ -405,12 +410,12 @@ elseif(APPLE AND WITH_APP_BUNDLE)
     add_definitions(-DWITH_APP_BUNDLE)
 else()
     include(GNUInstallDirs)
-    set(PROGNAME keepassxc)
+    set(PROGNAME keysafe)
     set(CLI_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}")
     set(PROXY_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}")
     set(BIN_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}")
-    set(PLUGIN_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/keepassxc")
-    set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/keepassxc")
+    set(PLUGIN_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/keysafe")
+    set(DATA_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/keysafe")
 endif()
 
 if(WITH_COVERAGE)

@@ -10,7 +10,8 @@ release*/
 *.swp
 
 .DS_Store
-.version
+# NetAigis KeySafe pins product version in .version (0.1.0-dev); track it.
+# .version
 desktop.ini
 \.scannerwork/
 
@@ -32,3 +33,6 @@ out/
 # vcpkg
 vcpkg_installed*/
 
+
+# Local dual-client artifacts
+.local-*

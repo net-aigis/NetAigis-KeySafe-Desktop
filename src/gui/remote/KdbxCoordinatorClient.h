@@ -14,9 +14,12 @@
  * This is not wired to KeePassXC database open/save lifecycle yet.
  * Never mark a database clean if publish() returns false.
  */
+class TestKdbxCoordinatorClientLive;
+
 class KdbxCoordinatorClient : public QObject
 {
     Q_OBJECT
+    friend class TestKdbxCoordinatorClientLive;
 
 public:
     KdbxCoordinatorClient(const QUrl& service,

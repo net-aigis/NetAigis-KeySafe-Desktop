@@ -1,0 +1,20 @@
+[Desktop Entry]
+Name=NetAigis KeySafe
+GenericName=Password Manager
+GenericName[de]=Passwortverwaltung
+Comment=NetAigis KeySafe desktop — KeePassXC-based fork for coordinated KDBX
+Comment[de]=NetAigis KeySafe Desktop — KeePassXC-basierter Fork für koordinierte KDBX
+Exec=keysafe %f
+TryExec=keysafe
+Icon=@APP_ICON_NAME@
+StartupWMClass=keysafe
+StartupNotify=false
+Terminal=false
+Type=Application
+Version=1.5
+Categories=Utility;Security;Qt;
+MimeType=application/x-keepass2;
+SingleMainWindow=true
+X-GNOME-SingleWindow=true
+Keywords=security;privacy;password-manager;keepass;keysafe;netaigis;
+Keywords[de]=sicherheit;privatsphäre;passwort-manager;keepass;keysafe;netaigis;

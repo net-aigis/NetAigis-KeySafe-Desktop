@@ -423,8 +423,8 @@ if(WIN32)
     include(GenerateProductVersion)
     generate_product_version(
             WIN32_ResourceFiles
-            NAME "KeePassXC"
-            COMPANY_NAME "KeePassXC Team"
+            NAME "NetAigis KeySafe"
+            COMPANY_NAME "NetAigis"
             VERSION_MAJOR ${KEEPASSXC_VERSION_MAJOR}
             VERSION_MINOR ${KEEPASSXC_VERSION_MINOR}
             VERSION_PATCH ${KEEPASSXC_VERSION_PATCH}
