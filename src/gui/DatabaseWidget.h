@@ -337,8 +337,15 @@ private:
     bool m_attemptingLock = false;
 
     bool beginCoordinatedEditing();
+    bool reconcileCoordinatorPending(KdbxCoordinatorClient* client,
+                                      const QByteArray& recoveryIdentity,
+                                      QString* error);
+    bool retainLocalCoordinatorPending(const RemoteParams* params, QString* error);
+    static QByteArray coordinatorRecoveryIdentity(const RemoteParams* params);
     QScopedPointer<KdbxCoordinatorClient> m_coordinatorClient;
     QByteArray m_coordinatorIdentity;
+    QByteArray m_coordinatorRecoveryIdentity;
+    QByteArray m_coordinatorOfflineBaseRevision;
     bool m_coordinatorSyncing = false;
     bool m_coordinatorLeaseLost = false;
     QScopedPointer<RemoteSettings> m_remoteSettings;

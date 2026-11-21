@@ -69,6 +69,7 @@
 #include "keeshare/KeeShare.h"
 #include "remote/RemoteHandler.h"
 #include "remote/CoordinatorByteLimits.h"
+#include "remote/CoordinatedRecoveryStore.h"
 #include "remote/KdbxCoordinatorClient.h"
 #include "remote/RemoteSettings.h"
 
@@ -252,9 +253,9 @@ DatabaseWidget::DatabaseWidget(QSharedPointer<Database> db, QWidget* parent)
     KeeShare::instance()->connectDatabase(m_db, {});
 
     if (m_db->isInitialized()) {
-        if (beginCoordinatedEditing()) {
-            switchToMainView();
-        } else {
+        // Leave LockedMode before coordinated sync/save (empty tip publishes via save()).
+        switchToMainView();
+        if (!beginCoordinatedEditing()) {
             // The caller can still close the tab, but must not edit it.
             setDisabled(true);
         }
@@ -1182,6 +1183,134 @@ int DatabaseWidget::addChildWidget(QWidget* w)
     return index;
 }
 
+QByteArray DatabaseWidget::coordinatorRecoveryIdentity(const RemoteParams* params)
+{
+    if (!params) {
+        return {};
+    }
+    // Match Android CoordinatorSession: url + NUL + databaseId (no token).
+    return (params->coordinatorUrl + QChar::Null + params->coordinatorDatabaseId).toUtf8();
+}
+
+bool DatabaseWidget::reconcileCoordinatorPending(KdbxCoordinatorClient* client,
+                                                 const QByteArray& recoveryIdentity,
+                                                 QString* error)
+{
+    if (!client || recoveryIdentity.isEmpty()) {
+        return true;
+    }
+    CoordinatedRecoveryStore::Pending pending;
+    QString findError;
+    const QString directory = CoordinatedRecoveryStore::recoveryDirectory();
+    if (!CoordinatedRecoveryStore::find(directory, recoveryIdentity, &pending, &findError)) {
+        if (!findError.isEmpty()) {
+            if (error) {
+                *error = findError;
+            }
+            return false;
+        }
+        return true;
+    }
+    if (!client->hasLease()) {
+        if (error) {
+            *error = tr("Unsynchronized KDBX recovery copy exists; obtain the editing lock to recover it");
+        }
+        return false;
+    }
+    QByteArray remoteEncrypted;
+    bool remoteExists = false;
+    if (!client->download(&remoteEncrypted, &remoteExists, error)) {
+        return false;
+    }
+    const QByteArray remoteRevision =
+        remoteExists ? CoordinatedRecoveryStore::sha256Hex(remoteEncrypted) : QByteArrayLiteral("0");
+    const auto action = CoordinatedRecoveryStore::decide(pending, remoteRevision, error);
+    switch (action) {
+    case CoordinatedRecoveryStore::RecoveryAction::AlreadyPublished:
+        if (!CoordinatedRecoveryStore::acknowledge(directory, recoveryIdentity, remoteRevision, error)) {
+            return false;
+        }
+        return true;
+    case CoordinatedRecoveryStore::RecoveryAction::Publish: {
+        QFile pendingFile(pending.filePath);
+        if (!pendingFile.open(QIODevice::ReadOnly)) {
+            if (error) {
+                *error = tr("Cannot read recovery copy for publish");
+            }
+            return false;
+        }
+        if (pendingFile.size() > CoordinatorByteLimits::MaxKdbxBytes) {
+            if (error) {
+                *error = tr("Recovery copy exceeds the permitted in-memory size");
+            }
+            return false;
+        }
+        const QByteArray saved = pendingFile.read(CoordinatorByteLimits::MaxKdbxBytes + 1);
+        if (saved.size() > CoordinatorByteLimits::MaxKdbxBytes) {
+            if (error) {
+                *error = tr("Recovery copy exceeds the permitted in-memory size");
+            }
+            return false;
+        }
+        if (!client->publish(saved, error)) {
+            return false;
+        }
+        const QByteArray confirmed = CoordinatedRecoveryStore::sha256Hex(saved);
+        if (!CoordinatedRecoveryStore::acknowledge(directory, recoveryIdentity, confirmed, error)) {
+            return false;
+        }
+        return true;
+    }
+    case CoordinatedRecoveryStore::RecoveryAction::Conflict:
+        if (error) {
+            *error = tr("Recovery copy conflicts with a newer remote revision; "
+                        "no automatic overwrite was attempted. Manual merge is required.");
+        }
+        return false;
+    }
+    return false;
+}
+
+bool DatabaseWidget::retainLocalCoordinatorPending(const RemoteParams* params, QString* error)
+{
+    if (!params || !m_db) {
+        return false;
+    }
+    const QByteArray identity = coordinatorRecoveryIdentity(params);
+    QByteArray base = m_coordinatorOfflineBaseRevision;
+    if (base.isEmpty() && m_coordinatorClient) {
+        base = m_coordinatorClient->revisionForRecovery();
+    }
+    if (base.isEmpty()) {
+        if (error) {
+            *error = tr("No valid coordinator base revision for recovery");
+        }
+        return false;
+    }
+    QFile local(m_db->filePath());
+    if (!local.open(QIODevice::ReadOnly)) {
+        if (error) {
+            *error = tr("Cannot read local database for recovery retain");
+        }
+        return false;
+    }
+    if (local.size() > CoordinatorByteLimits::MaxKdbxBytes) {
+        if (error) {
+            *error = tr("Local database exceeds the permitted in-memory size");
+        }
+        return false;
+    }
+    const QByteArray bytes = local.read(CoordinatorByteLimits::MaxKdbxBytes + 1);
+    if (bytes.size() > CoordinatorByteLimits::MaxKdbxBytes) {
+        if (error) {
+            *error = tr("Local database exceeds the permitted in-memory size");
+        }
+        return false;
+    }
+    return CoordinatedRecoveryStore::retain(
+        CoordinatedRecoveryStore::recoveryDirectory(), identity, base, bytes, error);
+}
+
 // A configured database needs its remote editing lease from unlock until lock.
 // Normal saves publish under this same lease. The feature is opt-in and keeps
 // the legacy remote command provider unchanged for unconfigured databases.
@@ -1208,6 +1337,8 @@ bool DatabaseWidget::beginCoordinatedEditing()
         (selected->coordinatorUrl + QChar::Null + selected->coordinatorDatabaseId
          + QChar::Null + selected->coordinatorAccessToken).toUtf8(),
         QCryptographicHash::Sha256);
+    m_coordinatorRecoveryIdentity = coordinatorRecoveryIdentity(selected);
+    m_coordinatorOfflineBaseRevision.clear();
     m_coordinatorClient.reset(new KdbxCoordinatorClient(QUrl(selected->coordinatorUrl),
                                                         selected->coordinatorDatabaseId,
                                                         selected->coordinatorAccessToken.toUtf8(),
@@ -1218,13 +1349,23 @@ bool DatabaseWidget::beginCoordinatedEditing()
             &DatabaseWidget::onCoordinatorLeaseLost);
     QString error;
     if (!m_coordinatorClient->acquire(&error)) {
+        // Transport/busy failure: keep local editing offline against last tip base if we have one.
+        // Pending recovery is still retained on save; reconnect reconciles PUBLISH/CONFLICT.
         m_coordinatorClient.reset();
         showErrorMessage(tr("Cannot open shared database for editing: %1").arg(error));
+        return false;
+    }
+    if (!reconcileCoordinatorPending(m_coordinatorClient.data(), m_coordinatorRecoveryIdentity, &error)) {
+        m_coordinatorClient.reset();
+        m_coordinatorIdentity.clear();
+        m_coordinatorRecoveryIdentity.clear();
+        showErrorMessage(error);
         return false;
     }
     if (!syncWithCoordinator(selected)) {
         m_coordinatorClient.reset();
         m_coordinatorIdentity.clear();
+        m_coordinatorRecoveryIdentity.clear();
         return false;
     }
     // Do not clear a lease-loss latch after it fired while the sync request
@@ -1244,28 +1385,40 @@ void DatabaseWidget::onCoordinatorLeaseLost()
     if (m_autosaveTimer) {
         m_autosaveTimer->stop();
     }
-    // Fail closed before persisting any recovery data. A separate encrypted
-    // snapshot prevents an unsaved in-memory revision from being lost when the
-    // window is subsequently closed. Do not modify the source database path.
+    // Fail closed before persisting any recovery data. Bind pending ciphertext
+    // to the last known tip revision (Android AtomicRecoveryStore scheme) so
+    // reconnect can decide PUBLISH / CONFLICT / ALREADY_PUBLISHED.
     setDisabled(true);
     QString recoveryStatus;
     if (m_db && m_db->isInitialized() && !m_db->isSaving()) {
-        const QString directoryPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)
-                                      + QStringLiteral("/coordinated-recovery");
-        if (!QDir().mkpath(directoryPath)) {
-            recoveryStatus = tr("Could not create encrypted recovery directory.");
+        const RemoteParams* selected = nullptr;
+        for (const auto* params : m_remoteSettings->getAllRemoteParams()) {
+            if (!params->coordinatorUrl.isEmpty()) {
+                selected = params;
+                break;
+            }
+        }
+        QString error;
+        if (selected && retainLocalCoordinatorPending(selected, &error)) {
+            recoveryStatus = tr("Encrypted recovery retained for reconnect (base-bound pending KDBX).");
+        } else if (!error.isEmpty()) {
+            recoveryStatus = tr("Could not retain base-bound recovery: %1").arg(error);
         } else {
-            const QString name = QStringLiteral("kdbx-recovery-")
-                                 + QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMddTHHmmsszzz"))
-                                 + QStringLiteral("-")
-                                 + QUuid::createUuid().toString(QUuid::WithoutBraces)
-                                 + QStringLiteral(".kdbx");
-            const QString filePath = QDir(directoryPath).filePath(name);
-            QString error;
-            if (m_db->saveEncryptedRecoveryCopy(filePath, &error)) {
-                recoveryStatus = tr("Encrypted local recovery file: %1").arg(filePath);
+            const QString directoryPath = CoordinatedRecoveryStore::recoveryDirectory();
+            if (!QDir().mkpath(directoryPath)) {
+                recoveryStatus = tr("Could not create encrypted recovery directory.");
             } else {
-                recoveryStatus = tr("Could not persist encrypted recovery file: %1").arg(error);
+                const QString name = QStringLiteral("kdbx-recovery-")
+                                     + QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMddTHHmmsszzz"))
+                                     + QStringLiteral("-")
+                                     + QUuid::createUuid().toString(QUuid::WithoutBraces)
+                                     + QStringLiteral(".kdbx");
+                const QString filePath = QDir(directoryPath).filePath(name);
+                if (m_db->saveEncryptedRecoveryCopy(filePath, &error)) {
+                    recoveryStatus = tr("Encrypted local recovery file: %1").arg(filePath);
+                } else {
+                    recoveryStatus = tr("Could not persist encrypted recovery file: %1").arg(error);
+                }
             }
         }
     } else {
@@ -1447,9 +1600,34 @@ bool DatabaseWidget::syncWithCoordinator(const RemoteParams* params)
         return false;
     }
     emit updateSyncProgress(75, tr("Publishing version-checked encrypted database..."));
+    const QByteArray publishedFromBase = client->revisionForRecovery();
     if (!client->publish(remoteEncrypted, &error)) {
         fail(tr("Remote publication failed; local database is retained: %1").arg(error));
         return false;
+    }
+    {
+        const QByteArray identity = coordinatorRecoveryIdentity(params);
+        const QByteArray confirmed = CoordinatedRecoveryStore::sha256Hex(remoteEncrypted);
+        const QString directory = CoordinatedRecoveryStore::recoveryDirectory();
+        QString ackError;
+        CoordinatedRecoveryStore::Pending leftover;
+        if (CoordinatedRecoveryStore::find(directory, identity, &leftover, &ackError)) {
+            const auto action = CoordinatedRecoveryStore::decide(leftover, confirmed, &ackError);
+            if (action == CoordinatedRecoveryStore::RecoveryAction::AlreadyPublished) {
+                if (!CoordinatedRecoveryStore::acknowledge(directory, identity, confirmed, &ackError)) {
+                    fail(tr("Remote publication succeeded, but recovery acknowledgement failed: %1")
+                             .arg(ackError));
+                    return false;
+                }
+            } else if (!CoordinatedRecoveryStore::clearSuperseded(
+                           directory, identity, publishedFromBase, &ackError)) {
+                fail(tr("Remote publication succeeded, but recovery cleanup failed: %1").arg(ackError));
+                return false;
+            }
+        } else if (!ackError.isEmpty()) {
+            fail(tr("Remote publication succeeded, but recovery lookup failed: %1").arg(ackError));
+            return false;
+        }
     }
     if (transactionClient && !client->release(&error)) {
         fail(tr("Remote publication succeeded, but lock release was not confirmed: %1").arg(error));
@@ -1605,13 +1783,15 @@ void DatabaseWidget::loadDatabase(bool accepted)
     if (accepted) {
         emit databaseAboutToUnlock();
         replaceDatabase(openWidget->database());
+        // Leave LockedMode before coordinated sync/save. Initial empty-tip
+        // publication calls save(), which asserts !isLocked().
+        switchToMainView();
         // Fail closed: do not permit editing a stale local copy before
         // acquiring its cross-platform exclusive lease and reconciling it.
         if (!beginCoordinatedEditing()) {
             emit closeRequest();
             return;
         }
-        switchToMainView();
         processAutoOpen();
 
         restoreGroupEntryFocus(m_groupBeforeLock, m_entryBeforeLock);
@@ -1791,7 +1971,12 @@ void DatabaseWidget::unlockDatabase(bool accepted)
     m_groupBeforeLock = QUuid();
     m_entryBeforeLock = QUuid();
 
+    // Leave LockedMode before coordinated sync/save (same as loadDatabase).
     switchToMainView();
+    if (!beginCoordinatedEditing()) {
+        emit closeRequest();
+        return;
+    }
     processAutoOpen();
     emit databaseUnlocked();
 
@@ -2829,7 +3014,7 @@ bool DatabaseWidget::save()
 
     QString errorMessage;
     if (performSave(errorMessage)) {
-        if (m_coordinatorClient && !m_coordinatorSyncing) {
+        if ((m_coordinatorClient || !m_coordinatorOfflineBaseRevision.isEmpty()) && !m_coordinatorSyncing) {
             const RemoteParams* selected = nullptr;
             for (const auto* params : m_remoteSettings->getAllRemoteParams()) {
                 if (!params->coordinatorUrl.isEmpty()) {
@@ -2837,9 +3022,26 @@ bool DatabaseWidget::save()
                     break;
                 }
             }
-            if (!selected || !syncWithCoordinator(selected)) {
+            QString retainError;
+            if (!selected || !retainLocalCoordinatorPending(selected, &retainError)) {
+                m_db->markAsModified();
+                m_blockAutoSave = false;
+                showErrorMessage(tr("Local KDBX saved, but recovery retain failed: %1").arg(retainError));
+                return false;
+            }
+            // Offline edit path: durable pending only; publish on reconnect.
+            if (!m_coordinatorClient || !m_coordinatorClient->hasLease()) {
+                m_db->markAsModified();
+                m_blockAutoSave = false;
+                showMessage(tr("Offline: encrypted changes retained locally; not synchronized."),
+                            MessageWidget::Warning,
+                            false);
+                return true;
+            }
+            if (!syncWithCoordinator(selected)) {
                 // Even if the local copy was saved, it has NOT been
                 // published. Keep the dirty flag and make closing ask.
+                // Pending recovery remains for reconnect.
                 m_db->markAsModified();
                 m_blockAutoSave = false;
                 showErrorMessage(tr("Local KDBX saved, but remote publication failed."));

@@ -10,16 +10,17 @@
 #include <QUrl>
 
 /**
- * Standalone HTTPS coordination provider (proof of concept).
- * This is not wired to KeePassXC database open/save lifecycle yet.
+ * HTTPS coordination client used by DatabaseWidget for shared KDBX sessions.
  * Never mark a database clean if publish() returns false.
  */
 class TestKdbxCoordinatorClientLive;
+class TestCoordinatedRecoveryStore;
 
 class KdbxCoordinatorClient : public QObject
 {
     Q_OBJECT
     friend class TestKdbxCoordinatorClientLive;
+    friend class TestCoordinatedRecoveryStore;
 
 public:
     KdbxCoordinatorClient(const QUrl& service,
@@ -37,6 +38,8 @@ public:
     bool release(QString* error);
     bool hasLease() const { return !m_lease.isEmpty() && !m_lost; }
     bool isBusy() const { return m_busy; }
+    /** Tip revision held by this lease ("0" or SHA-256 hex); used to bind recovery copies. */
+    QByteArray revisionForRecovery() const { return m_revision; }
 
 signals:
     // Emitted once whenever a held editing lease becomes unusable.
