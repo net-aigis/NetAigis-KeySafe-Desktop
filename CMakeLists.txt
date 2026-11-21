@@ -100,7 +100,7 @@ project(KeePassXC)
 # user-visible branding and install IDs are KeySafe.
 set(NETAIGIS_PRODUCT_NAME "NetAigis KeySafe")
 set(APP_ID "de.netaigis.keysafe.desktop")
-# Product version is .version (0.1.0), same scheme as Android NetAigis-KeySafe.
+# Product version is .version (1.0.0), same scheme as Android NetAigis-KeySafe.
 
 # Retrieve git HEAD revision hash
 set(GIT_HEAD_OVERRIDE "" CACHE STRING "Manually set the Git HEAD hash when missing (eg, when no .git folder exists)")

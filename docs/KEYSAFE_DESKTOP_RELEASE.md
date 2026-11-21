@@ -1,10 +1,10 @@
-# NetAigis KeySafe Desktop — 0.1.0
+# NetAigis KeySafe Desktop — 1.0.0
 
-Aligned with Android KeySafe **0.1.0**.
+Aligned with Android KeySafe **1.0.0**.
 
 ## This release
 
-- Product version `.version` = `0.1.0`
+- Product version `.version` = `1.0.0`
 - App id `de.netaigis.keysafe.desktop`
 - Coordinated KDBX + recovery store
 - Local Xvfb proofs: unlock/publish, crash reopen, edit+Ctrl+S tip advance, dual-writer busy (423)
